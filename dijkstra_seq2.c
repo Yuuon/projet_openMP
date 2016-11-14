@@ -1,6 +1,7 @@
 # include <stdlib.h>
 # include <stdio.h>
 # include <sys/time.h>
+# include <stdbool.h>
 
 #define INF (1<<30) // a very large positive integer
 
@@ -80,40 +81,64 @@ double dijkstra(){
 
   start = get_time();
   tree[0] = 1;
-  for (int i = 1; i < num_nodes; i++)
-    tree[i] = 0;
+  #pragma omp parallel for
+    for (int i = 1; i < num_nodes; i++)
+      tree[i] = 0;
 
-  for (int i = 0; i < num_nodes; i++)
-    min_distance[i] = get_distance(0,i);
+  #pragma omp parallel for
+      for (int i = 0; i < num_nodes; i++)
+        min_distance[i] = get_distance(0,i);
 
+  bool abort = false;
+
+  #pragma omp parallel for
   for (int step = 1; step < num_nodes; step++ ){
-    // find nearest node
-    shortest_dist = INF;
-    nearest_node = -1;
-    for (int i = 0; i < num_nodes; i++){
-        if ( !tree[i] && min_distance[i] < shortest_dist ){
-        shortest_dist = min_distance[i];
-        nearest_node = i;
-      }
-    }
+    if(!abort){
+        // find nearest node
+        shortest_dist = INF;
+        nearest_node = -1;
+        #pragma omp parallel for
+        for (int i = 0; i < num_nodes; i++){
+	   
+          if ( !tree[i] && min_distance[i] < shortest_dist ){
+	    #pragma omp critical 
+              shortest_dist = min_distance[i];
+              nearest_node = i;
+	    
+          }
+          
+        }
 
-    if ( nearest_node == - 1 ){
-      fprintf(stderr,"Warning: Search ended early, the graph might not be connected.\n" );
-      break;
-    }
+        if ( nearest_node == - 1 ){
+          fprintf(stderr,"Warning: Search ended early, the graph might not be connected.\n" );
+          abort = true;
+	  
+        } 
+	int done = 1;
+	while(!abort && !done) {
+          tree[nearest_node] = 1;
 
-    tree[nearest_node] = 1;
-    for (int i = 0; i < num_nodes; i++)
-      if ( !tree[i] ){
-        int d = get_distance(nearest_node,i);
-        if ( d < INF )
-          if ( min_distance[nearest_node] + d < min_distance[i] )
-            min_distance[i] = min_distance[nearest_node] + d;
-      }
+          #pragma omp parallel for
+          for (int i = 0; i < num_nodes; i++) {
+            if ( !tree[i] ){
+              int d = get_distance(nearest_node,i);
+              if ( d < INF )
+              if ( min_distance[nearest_node] + d < min_distance[i] )
+                min_distance[i] = min_distance[nearest_node] + d;
+            }
+	  }
+	  done = 0;
+	}
+	
+    }   
   }
   stop = get_time();
   return(stop-start);
+
+  
 }
+
+
 
 /******************************************************************************/
 void read_graph(char *filename){
